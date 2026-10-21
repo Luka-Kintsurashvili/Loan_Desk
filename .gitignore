@@ -1,3 +1,9 @@
 supabase/.env
 supabase/.temp/
 .env
+.env.*
+!.env.example
+data/
+model/
+__pycache__/
+*.pyc
