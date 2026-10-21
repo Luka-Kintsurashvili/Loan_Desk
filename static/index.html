@@ -55,7 +55,7 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 </div>
 <script>
 const $ = id => document.getElementById(id);
-let C = {}, M = [], imgs = [];
+let C = {}, M = [], MT = [], imgs = [];
 let APPS = [], CUR_APP_ID = null, LAST_DECISION = null, LAST_READ = null;
 const el = (t, x, c) => { const e = document.createElement(t); if (x != null) e.textContent = x; if (c) e.className = c; return e; };
 const pct = x => (x * 100).toFixed(1) + "%";
@@ -103,7 +103,10 @@ const shorten = (s, n) => (s && s.length > n ? s.slice(0, n) + "..." : (s || "")
 function renderLog() {
   $("log").replaceChildren();
   if (!M.length) { $("log").hidden = true; $("drop").hidden = false; return; }
-  M.forEach(m => { if (m.role === "user") add("user", m.content); else md(add("bot", ""), m.content); });
+  M.forEach((m, i) => {
+    if (m.role === "user") { add("user", m.content); return; }
+    const d = add("bot", ""); md(d, m.content); renderTrace(d, MT[i]);
+  });
 }
 
 function appLabel(c, d) {
@@ -126,7 +129,7 @@ function renderApps() {
 function upsertCurrentApp() {
   if (!M.length) return;
   if (CUR_APP_ID == null) CUR_APP_ID = Date.now() + Math.random();
-  const rec = { id: CUR_APP_ID, label: appLabel(C, LAST_DECISION), case: C, messages: M, decision: LAST_DECISION, read: LAST_READ };
+  const rec = { id: CUR_APP_ID, label: appLabel(C, LAST_DECISION), case: C, messages: M, trace: MT, decision: LAST_DECISION, read: LAST_READ };
   const i = APPS.findIndex(a => a.id === CUR_APP_ID);
   if (i >= 0) APPS[i] = rec; else APPS.push(rec);
   renderApps();
@@ -136,7 +139,7 @@ function switchToApp(id) {
   if (id === CUR_APP_ID) return;
   const app = APPS.find(a => a.id === id);
   if (!app) return;
-  C = app.case; M = app.messages; LAST_DECISION = app.decision; LAST_READ = app.read; CUR_APP_ID = id;
+  C = app.case; M = app.messages; MT = app.trace || []; LAST_DECISION = app.decision; LAST_READ = app.read; CUR_APP_ID = id;
   imgs = []; $("chips").replaceChildren();
   renderLog();
   panel(app.decision || {}, app.read || {});
@@ -186,23 +189,23 @@ async function send() {
   const text = $("q").value.trim();
   if (!text && !imgs.length) return;
   const shown = text || "(documents attached)";
-  M.push({ role: "user", content: shown }); add("user", shown + (imgs.length ? `\n[${imgs.length} file(s)]` : ""));
+  M.push({ role: "user", content: shown }); MT.push(null); add("user", shown + (imgs.length ? `\n[${imgs.length} file(s)]` : ""));
   const sent = imgs; imgs = []; $("chips").replaceChildren(); $("q").value = ""; autosize(); $("send").disabled = true;
   const wait = add("bot", "Thinking...");
   try {
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: C, messages: M, images: sent }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
-    C = j.case; M.push({ role: "assistant", content: j.reply }); md(wait, j.reply);
+    C = j.case; M.push({ role: "assistant", content: j.reply }); MT.push(j.trace); md(wait, j.reply);
     if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small"));
     renderTrace(wait, j.trace); panel(j.decision, j.read);
     LAST_DECISION = j.decision; LAST_READ = j.read; upsertCurrentApp();
-  } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); }
+  } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); MT.pop(); }
   $("send").disabled = false; $("q").focus();
 }
 $("send").onclick = send;
 $("newcase").onclick = () => {
   upsertCurrentApp();
-  C = {}; M = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
+  C = {}; M = []; MT = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
   $("chips").replaceChildren(); $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false; $("panel").replaceChildren();
   renderApps();
 };
