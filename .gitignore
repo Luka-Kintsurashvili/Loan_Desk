@@ -4,6 +4,7 @@
 data/
 model/*
 !model/pd_model.joblib
+!model/company_risk_model.joblib
 __pycache__/
 *.pyc
 .claude/
