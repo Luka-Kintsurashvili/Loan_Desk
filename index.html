@@ -28,6 +28,7 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 .badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:13px;color:#fff}
 .ok{color:var(--ok)}.no{color:var(--bad)}.small{font-size:13px;color:var(--mut)}
 .ck{display:flex;justify-content:space-between;font-size:14px;padding:2px 0}aside li{font-size:14px;margin:4px 0}aside ul{padding-left:18px;margin:4px 0}
+.trace{margin-top:8px;font-size:13px;color:var(--mut)}.trace summary{cursor:pointer}.trace ul{margin:4px 0;padding-left:18px}.trace li{margin:3px 0}.trace b{color:var(--fg)}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -91,6 +92,25 @@ function md(box, text) {
   });
 }
 const add = (role, text) => { $("log").hidden = false; $("drop").hidden = true; const d = el("div", text, "msg " + (role === "user" ? "user" : "bot")); $("log").append(d); $("log").scrollTop = 1e9; return d; };
+const shorten = (s, n) => (s && s.length > n ? s.slice(0, n) + "..." : (s || ""));
+
+function renderTrace(container, trace) {
+  if (!trace || !trace.length) return;
+  const det = document.createElement("details");
+  det.className = "trace";
+  const sum = document.createElement("summary");
+  sum.textContent = `Agent steps (${trace.length})`;
+  det.append(sum);
+  const ul = el("ul");
+  trace.forEach(t => {
+    let argsText; try { argsText = JSON.stringify(t.args); } catch (e) { argsText = String(t.args); }
+    const li = el("li");
+    li.append(el("b", t.tool), document.createTextNode(" " + shorten(argsText, 80) + "  ->  " + shorten(t.result_summary, 140)));
+    ul.append(li);
+  });
+  det.append(ul);
+  container.append(det);
+}
 
 function panel(d, read) {
   const p = $("panel"); p.replaceChildren(); CUR = d.currency || "$";
@@ -124,7 +144,8 @@ async function send() {
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: C, messages: M, images: sent }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     C = j.case; M.push({ role: "assistant", content: j.reply }); md(wait, j.reply);
-    if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small")); panel(j.decision, j.read);
+    if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small"));
+    renderTrace(wait, j.trace); panel(j.decision, j.read);
   } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); }
   $("send").disabled = false; $("q").focus();
 }
