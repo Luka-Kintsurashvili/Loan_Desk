@@ -44,7 +44,7 @@ table.batch th{color:var(--mut);font-weight:600;font-size:13px}
 <body>
 <div id="app">
 <main>
-<h1>Loan Desk <span class="small">decision support for lenders</span> <button id="newcase" class="ghost" style="font-size:14px">New case</button></h1>
+<h1>Loan Desk <span class="small">decision support for lenders</span> <button id="newcase" class="ghost" style="font-size:14px">New case</button> <button id="viewBatchBtn" class="ghost" style="font-size:14px" hidden>View CSV results</button></h1>
 <div id="apps" class="apps" hidden></div>
 <div id="log" hidden></div>
 <div id="drop"><div><b>Drop a loan application, pay stub or bank statement here</b>images or PDF, or just type below<br>(use test or redacted documents)</div></div>
@@ -90,13 +90,30 @@ async function addFiles(files) {
 $("attach").onclick = () => $("file").click();
 $("file").onchange = e => addFiles([...e.target.files]);
 
-async function discussRow(name, caseData) {
-  // Deliberately does NOT clear #log: the CSV results table (and anything else already
-  // on screen) lives only in the DOM, not in any saved Application, so wiping it here
-  // would destroy it with no way back. The new conversation just appends below instead.
+let LAST_BATCH = null;
+
+function clearToBlankCase() {
   if (M.length) upsertCurrentApp();
-  C = { ...caseData }; M = []; MT = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
-  $("chips").replaceChildren();
+  C = {}; M = []; MT = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
+  $("chips").replaceChildren(); $("panel").replaceChildren();
+  $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false;
+}
+
+function showBatchResults() {
+  if (!LAST_BATCH) return;
+  clearToBlankCase();
+  renderBatchTable(add("bot", ""), LAST_BATCH.results);
+  renderApps();
+}
+$("viewBatchBtn").onclick = showBatchResults;
+
+async function discussRow(name, caseData, preview) {
+  // A full reset, same as New case - one applicant, one clean conversation, no mixing
+  // CSV results aren't lost: the "View CSV results" button (shown once a CSV is scored)
+  // brings the table straight back.
+  clearToBlankCase();
+  C = { ...caseData };
+  if (preview) panel({ verdict: preview.verdict, currency: "$" }, caseData); // instant, before the AI even replies
   renderApps();
   $("q").value = `Please review ${name}'s case and explain the policy result.`;
   autosize();
@@ -119,7 +136,7 @@ function renderBatchTable(container, results) {
     row.append(el("td", r.monthly_payment != null ? usd(r.monthly_payment) : "-"));
     row.append(el("td", r.verdict === "need_info" ? "missing: " + (r.missing || []).join(", ") : (r.top_risk_reason || "")));
     const dCell = el("td"); const btn = el("button", "Discuss →"); btn.className = "ghost small-btn";
-    btn.onclick = () => discussRow(r.name, r.case); dCell.append(btn); row.append(dCell);
+    btn.onclick = () => discussRow(r.name, r.case, r); dCell.append(btn); row.append(dCell);
     t.append(row);
   });
   container.append(t);
@@ -132,6 +149,8 @@ $("batchFile").onchange = async e => {
   try {
     const r = await fetch("/api/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv: text }) });
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    LAST_BATCH = { fileName: f.name, results: j.results };
+    $("viewBatchBtn").hidden = false;
     renderBatchTable(box, j.results);
   } catch (err) { box.textContent = "Error: " + err.message; }
 };
@@ -256,12 +275,7 @@ async function send() {
   $("send").disabled = false; $("q").focus();
 }
 $("send").onclick = send;
-$("newcase").onclick = () => {
-  upsertCurrentApp();
-  C = {}; M = []; MT = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
-  $("chips").replaceChildren(); $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false; $("panel").replaceChildren();
-  renderApps();
-};
+$("newcase").onclick = () => { clearToBlankCase(); renderApps(); };
 $("q").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
 const autosize = () => { $("q").style.height = "auto"; $("q").style.height = $("q").scrollHeight + "px"; };
 $("q").addEventListener("input", autosize);
