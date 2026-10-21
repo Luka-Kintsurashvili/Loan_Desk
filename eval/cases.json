@@ -1,0 +1,75 @@
+[
+  {
+    "id": "strong_applicant",
+    "category": "good",
+    "description": "High income, high FICO, low DTI, small loan relative to income - should clearly pass.",
+    "facts": {"loan_amount": 8000, "term_months": 36, "annual_income": 95000, "credit_score": 780, "dti_pct": 5, "experience_c": "yes"},
+    "expected_verdict": "meets_policy"
+  },
+  {
+    "id": "solid_small_loan_60mo",
+    "category": "good",
+    "description": "Comfortably affordable loan over a longer term - the model has no term input, so a longer term must not change the default-risk estimate by itself.",
+    "facts": {"loan_amount": 6000, "term_months": 60, "annual_income": 72000, "credit_score": 740, "dti_pct": 6, "experience_c": "yes"},
+    "expected_verdict": "meets_policy"
+  },
+  {
+    "id": "borderline_pass",
+    "category": "borderline",
+    "description": "Decent but unremarkable applicant; default probability lands just under the 15% limit.",
+    "facts": {"loan_amount": 7000, "term_months": 36, "annual_income": 65000, "credit_score": 720, "dti_pct": 8, "experience_c": "yes"},
+    "expected_verdict": "meets_policy"
+  },
+  {
+    "id": "borderline_conditions",
+    "category": "borderline",
+    "description": "Good profile but the requested amount is too large to pass; a smaller amount at the same term should be offered as a condition.",
+    "facts": {"loan_amount": 25000, "term_months": 36, "annual_income": 80000, "credit_score": 720, "dti_pct": 5, "experience_c": "yes"},
+    "expected_verdict": "conditions"
+  },
+  {
+    "id": "borderline_refer",
+    "category": "borderline",
+    "description": "Just over the default-probability limit (15.7% vs 15%) with no smaller amount/term found that fits - should refer, not conditions.",
+    "facts": {"loan_amount": 10000, "term_months": 36, "annual_income": 68000, "credit_score": 705, "dti_pct": 9, "experience_c": "yes"},
+    "expected_verdict": "refer"
+  },
+  {
+    "id": "risky_high_dti",
+    "category": "risky",
+    "description": "Large loan relative to income, high existing debt, weak credit score, and a thin credit file - clearly above the risk limit.",
+    "facts": {"loan_amount": 25000, "term_months": 36, "annual_income": 40000, "credit_score": 620, "dti_pct": 30, "experience_c": "no"},
+    "expected_verdict": "refer"
+  },
+  {
+    "id": "risky_thin_credit",
+    "category": "risky",
+    "description": "No credit history, low income relative to the loan, weak FICO - should refer.",
+    "facts": {"loan_amount": 15000, "term_months": 36, "annual_income": 35000, "credit_score": 610, "dti_pct": 20, "experience_c": "no"},
+    "expected_verdict": "refer"
+  },
+  {
+    "id": "missing_data",
+    "category": "missing_data",
+    "description": "Loan amount and income given, but no term - the agent must ask, never guess or assume a term.",
+    "facts": {"loan_amount": 12000, "annual_income": 50000},
+    "expected_verdict": "need_info"
+  },
+  {
+    "id": "out_of_range_amount",
+    "category": "out_of_range",
+    "description": "Loan amount above ~$40,000: outside the personal-loan range the model was trained on. The verdict still runs, but out_of_range must be flagged.",
+    "facts": {"loan_amount": 60000, "term_months": 60, "annual_income": 150000, "credit_score": 760, "dti_pct": 8, "experience_c": "yes"},
+    "expected_verdict": "meets_policy",
+    "expected_out_of_range": true
+  },
+  {
+    "id": "document_only_pay_stub",
+    "category": "document_only",
+    "description": "Facts shaped the way a pay stub/bank statement reading would produce them (monthly_income, monthly_debt_payments) rather than annual figures - exercises merge()'s monthly-to-annual and DTI-derivation logic, not just evaluate().",
+    "facts": {"loan_amount": 9000, "term_months": 36, "monthly_income": "5500", "monthly_debt_payments": "800", "credit_score": 690, "experience_c": "yes"},
+    "expected_verdict": "refer",
+    "policy_query": "what documents confirm income from a bank statement",
+    "expected_policy_section": "Income verification"
+  }
+]
