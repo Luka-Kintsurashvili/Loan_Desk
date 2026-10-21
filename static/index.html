@@ -113,7 +113,7 @@ function appLabel(c, d) {
 }
 
 function renderApps() {
-  const box = $("apps"); box.replaceChildren(); box.hidden = APPS.length < 2;
+  const box = $("apps"); box.replaceChildren(); box.hidden = APPS.length === 0;
   APPS.forEach(a => {
     const b = el("button", a.label);
     if (a.id === CUR_APP_ID) b.className = "active";
