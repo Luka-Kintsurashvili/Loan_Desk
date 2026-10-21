@@ -9,7 +9,7 @@ import json
 import logging
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import agent, config
+from . import agent, batch, config
 
 logger = logging.getLogger(__name__)
 STATIC_DIR = config.HERE / "static"
@@ -31,16 +31,19 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, {"error": "not found"})
 
     def do_POST(self) -> None:
-        if self.path != "/api/chat":
+        if self.path not in ("/api/chat", "/api/batch"):
             return self._send(404, {"error": "not found"})
         length = int(self.headers.get("Content-Length") or 0)
         if length > config.MAX_BODY_BYTES:
             return self._send(413, {"error": "request body too large"})
         try:
             body = json.loads(self.rfile.read(length))
-            self._send(200, agent.chat(body))
+            if self.path == "/api/batch":
+                self._send(200, {"results": batch.score_csv(body.get("csv", ""))})
+            else:
+                self._send(200, agent.chat(body))
         except Exception as e:
-            logger.exception("chat request failed")  # server-side detail; the client gets a short message
+            logger.exception("%s request failed", self.path)  # server-side detail; the client gets a short message
             self._send(500, {"error": str(e)})
 
     def log_message(self, *args) -> None:

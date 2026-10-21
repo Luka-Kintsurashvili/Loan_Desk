@@ -1,0 +1,6 @@
+name,loan_amount,term_months,annual_income,credit_score,dti_pct,experience_c,emp_length,purpose,home_ownership_n
+Maria K.,8000,36,95000,780,5,yes,6,debt_consolidation,MORTGAGE
+David T.,15000,36,60000,720,15,yes,4,debt_consolidation,RENT
+Nino R.,25000,36,40000,620,30,no,1,other,RENT
+Giorgi L.,10000,60,50000,690,10,yes,3,home_improvement,OWN
+Ana M.,12000,36,,650,8,yes,5,debt_consolidation,RENT

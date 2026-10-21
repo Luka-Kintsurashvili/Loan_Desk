@@ -88,6 +88,16 @@ The response's `trace` field records every tool call (name, args, a short result
 summary) and is rendered in the UI as a collapsible "Agent steps" block under each
 reply — nothing about what the agent did is hidden.
 
+### Batch mode (no LLM)
+
+The **CSV** button next to the attach button scores many applicants at once:
+`POST /api/batch` with raw CSV text runs `policy.merge()` + `policy.evaluate()` directly
+on each row and returns a verdict table - no chat, no LLM call, so it's instant and has
+zero API cost. Useful for bulk pre-screening, and for demonstrating that the policy
+engine is a real, independent system, not something the chat agent fakes. Try it with
+`eval/sample_applicants.csv` (5 applicants spanning meets_policy/conditions/refer/
+need_info).
+
 ## Architecture principles
 
 - **Tool use, model-directed.** The agent doesn't follow a fixed script; the LLM decides

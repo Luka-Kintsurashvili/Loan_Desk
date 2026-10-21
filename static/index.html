@@ -33,6 +33,10 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 .apps{display:flex;gap:6px;flex-wrap:wrap;width:100%;max-width:720px;margin:0 auto;padding:0 0 8px}
 .apps button{background:var(--card);color:var(--fg);border:1px solid var(--line);font-size:13px;padding:4px 10px;border-radius:10px;white-space:nowrap}
 .apps button.active{background:var(--acc);color:#fff;border-color:var(--acc)}
+table.batch{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
+table.batch th,table.batch td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line)}
+table.batch th{color:var(--mut);font-weight:600;font-size:13px}
+.v-meets_policy{color:var(--ok)}.v-refer{color:var(--bad)}.v-conditions{color:var(--mid)}.v-need_info{color:var(--mut)}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -45,10 +49,12 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 <div id="drop"><div><b>Drop a loan application, pay stub or bank statement here</b>images or PDF, or just type below<br>(use test or redacted documents)</div></div>
 <div id="composer">
 <div id="chips"></div>
-<div id="row"><button class="ghost" id="attach" title="Attach">+</button>
+<div id="row"><button class="ghost" id="attach" title="Attach a document">+</button>
+<button class="ghost" id="batchBtn" title="Score many applicants at once from a CSV" style="font-size:13px">CSV</button>
 <textarea id="q" rows="1" placeholder="Describe the applicant, the amount and term, or ask a question..."></textarea>
 <button id="send">Send</button></div>
 <input type="file" id="file" accept="image/*,application/pdf" multiple hidden>
+<input type="file" id="batchFile" accept=".csv,text/csv" hidden>
 </div>
 </main>
 <aside><div class="small">The panel updates after every message.</div><div id="panel"></div></aside>
@@ -82,6 +88,37 @@ async function addFiles(files) {
 }
 $("attach").onclick = () => $("file").click();
 $("file").onchange = e => addFiles([...e.target.files]);
+
+function renderBatchTable(container, results) {
+  container.replaceChildren();
+  container.append(el("p", `Scored ${results.length} applicant(s) from the CSV - no chat, no LLM call, pure policy engine:`));
+  const t = document.createElement("table"); t.className = "batch";
+  const names = { need_info: "needs info", meets_policy: "meets policy", conditions: "conditions", refer: "refer" };
+  const head = document.createElement("tr");
+  ["Applicant", "Verdict", "Default %", "Payment", "Note"].forEach(h => head.append(el("th", h)));
+  t.append(head);
+  results.forEach(r => {
+    const row = document.createElement("tr");
+    row.append(el("td", r.name));
+    const v = el("td", names[r.verdict] || r.verdict); v.className = "v-" + r.verdict; row.append(v);
+    row.append(el("td", r.default_probability != null ? pct(r.default_probability) : "-"));
+    row.append(el("td", r.monthly_payment != null ? usd(r.monthly_payment) : "-"));
+    row.append(el("td", r.verdict === "need_info" ? "missing: " + (r.missing || []).join(", ") : (r.top_risk_reason || "")));
+    t.append(row);
+  });
+  container.append(t);
+}
+$("batchBtn").onclick = () => $("batchFile").click();
+$("batchFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const text = await f.text();
+  const box = add("bot", `Scoring ${f.name}...`);
+  try {
+    const r = await fetch("/api/batch", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ csv: text }) });
+    const j = await r.json(); if (!r.ok) throw new Error(j.error);
+    renderBatchTable(box, j.results);
+  } catch (err) { box.textContent = "Error: " + err.message; }
+};
 $("drop").onclick = () => $("file").click();
 ["dragover", "dragenter"].forEach(n => $("drop").addEventListener(n, e => { e.preventDefault(); $("drop").classList.add("over"); }));
 ["dragleave", "drop"].forEach(n => $("drop").addEventListener(n, e => { e.preventDefault(); $("drop").classList.remove("over"); }));

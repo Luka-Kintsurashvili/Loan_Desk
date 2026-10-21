@@ -21,10 +21,12 @@ real borrower data anywhere in this repo — use made-up applicants only.
 
 `server.py` is a thin entry point; all the real logic lives in the `loan_desk/` package
 (`config`, `model_service`, `loan_math`, `policy`, `rag`, `llm_client`, `tools`, `agent`,
-`http_server`). One Python process (stdlib `http.server`, no web framework) serves one
-static page (`static/index.html`, vanilla JS, no build step) and one endpoint,
-`POST /api/chat`. The client is stateless-server-side: it holds the conversation and the
-case dict and resends both on every turn. See `README.md` for the full diagram.
+`batch`, `http_server`). One Python process (stdlib `http.server`, no web framework)
+serves one static page (`static/index.html`, vanilla JS, no build step) and two
+endpoints: `POST /api/chat` (the agent) and `POST /api/batch` (deterministic CSV
+scoring, no LLM - `loan_desk/batch.py` runs `policy.merge()`/`policy.evaluate()` per
+row). The chat client is stateless-server-side: it holds the conversation and the case
+dict and resends both on every turn. See `README.md` for the full diagram.
 
 `chat()` runs a **ReAct-style agent loop** (Lecture 6: Thought -> Action -> Observation,
 repeated) against an OpenAI-compatible chat-completions endpoint, capped at
