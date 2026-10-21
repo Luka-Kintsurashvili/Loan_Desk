@@ -71,6 +71,23 @@ results as data, never as instructions (prompt-injection resistance — tested i
 assumed, and to never report a number it didn't get from a tool. This is decision
 support, not an automated approval: the UI and prompts say so explicitly.
 
+The prompt also explicitly forbids calling `update_case` with facts not literally
+present in the user's message or an attached document, and forbids calling the
+evaluation tools (`score_applicant`/`check_policy`/`find_conditions`/
+`search_policy_docs`) when the user hasn't given anything new to evaluate (an
+informational question like "what do I need for another applicant?" answers in words
+only). This was a real bug found during testing: without this rule the model would
+invent a plausible-looking applicant and run a full decision on fabricated data rather
+than just answering the question - worth remembering if the rules ever get rewritten.
+
+**One case at a time, by design.** Only one applicant's facts are "live" in `case` per
+conversation; there's no server-side concept of multiple customers. The UI's
+"Applications" switcher (`static/index.html`) is what lets an officer juggle several
+applicants - it's a client-side-only list of saved `{case, messages, decision}` snapshots,
+swapped in and out of the single active `case`. The agent is instructed to tell the user
+to click "New case" (which saves the current one before clearing) rather than try to
+keep two customers' facts straight in one `case` dict itself.
+
 ## Conventions
 
 - Deterministic math/ML stays in Python functions (`policy.evaluate`, `loan_math.pmt`,

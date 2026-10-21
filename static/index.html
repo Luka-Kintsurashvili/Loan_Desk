@@ -29,6 +29,9 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 .ok{color:var(--ok)}.no{color:var(--bad)}.small{font-size:13px;color:var(--mut)}
 .ck{display:flex;justify-content:space-between;font-size:14px;padding:2px 0}aside li{font-size:14px;margin:4px 0}aside ul{padding-left:18px;margin:4px 0}
 .trace{margin-top:8px;font-size:13px;color:var(--mut)}.trace summary{cursor:pointer}.trace ul{margin:4px 0;padding-left:18px}.trace li{margin:3px 0}.trace b{color:var(--fg)}
+.apps{display:flex;gap:6px;flex-wrap:wrap;width:100%;max-width:720px;margin:0 auto;padding:0 0 8px}
+.apps button{background:var(--card);color:var(--fg);border:1px solid var(--line);font-size:13px;padding:4px 10px;border-radius:10px;white-space:nowrap}
+.apps button.active{background:var(--acc);color:#fff;border-color:var(--acc)}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -36,6 +39,7 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 <div id="app">
 <main>
 <h1>Loan Desk <span class="small">decision support for lenders</span> <button id="newcase" class="ghost" style="font-size:14px">New case</button></h1>
+<div id="apps" class="apps" hidden></div>
 <div id="log" hidden></div>
 <div id="drop"><div><b>Drop a loan application, pay stub or bank statement here</b>images or PDF, or just type below<br>(use test or redacted documents)</div></div>
 <div id="composer">
@@ -51,6 +55,7 @@ aside h2{font-size:15px;margin:16px 0 6px}.big{font-size:40px;font-weight:700}
 <script>
 const $ = id => document.getElementById(id);
 let C = {}, M = [], imgs = [];
+let APPS = [], CUR_APP_ID = null, LAST_DECISION = null, LAST_READ = null;
 const el = (t, x, c) => { const e = document.createElement(t); if (x != null) e.textContent = x; if (c) e.className = c; return e; };
 const pct = x => (x * 100).toFixed(1) + "%";
 let CUR = "$";
@@ -93,6 +98,49 @@ function md(box, text) {
 }
 const add = (role, text) => { $("log").hidden = false; $("drop").hidden = true; const d = el("div", text, "msg " + (role === "user" ? "user" : "bot")); $("log").append(d); $("log").scrollTop = 1e9; return d; };
 const shorten = (s, n) => (s && s.length > n ? s.slice(0, n) + "..." : (s || ""));
+
+function renderLog() {
+  $("log").replaceChildren();
+  if (!M.length) { $("log").hidden = true; $("drop").hidden = false; return; }
+  M.forEach(m => { if (m.role === "user") add("user", m.content); else md(add("bot", ""), m.content); });
+}
+
+function appLabel(c, d) {
+  const parts = [];
+  if (c && c.loan_amount) parts.push(usd(c.loan_amount));
+  if (d && d.verdict) parts.push({ need_info: "needs info", meets_policy: "meets policy", conditions: "conditions", refer: "refer" }[d.verdict] || d.verdict);
+  return parts.join(" · ") || "Application";
+}
+
+function renderApps() {
+  const box = $("apps"); box.replaceChildren(); box.hidden = APPS.length < 2;
+  APPS.forEach(a => {
+    const b = el("button", a.label);
+    if (a.id === CUR_APP_ID) b.className = "active";
+    b.onclick = () => switchToApp(a.id);
+    box.append(b);
+  });
+}
+
+function upsertCurrentApp() {
+  if (!M.length) return;
+  if (CUR_APP_ID == null) CUR_APP_ID = Date.now() + Math.random();
+  const rec = { id: CUR_APP_ID, label: appLabel(C, LAST_DECISION), case: C, messages: M, decision: LAST_DECISION, read: LAST_READ };
+  const i = APPS.findIndex(a => a.id === CUR_APP_ID);
+  if (i >= 0) APPS[i] = rec; else APPS.push(rec);
+  renderApps();
+}
+
+function switchToApp(id) {
+  if (id === CUR_APP_ID) return;
+  const app = APPS.find(a => a.id === id);
+  if (!app) return;
+  C = app.case; M = app.messages; LAST_DECISION = app.decision; LAST_READ = app.read; CUR_APP_ID = id;
+  imgs = []; $("chips").replaceChildren();
+  renderLog();
+  panel(app.decision || {}, app.read || {});
+  renderApps();
+}
 
 function renderTrace(container, trace) {
   if (!trace || !trace.length) return;
@@ -146,11 +194,17 @@ async function send() {
     C = j.case; M.push({ role: "assistant", content: j.reply }); md(wait, j.reply);
     if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small"));
     renderTrace(wait, j.trace); panel(j.decision, j.read);
+    LAST_DECISION = j.decision; LAST_READ = j.read; upsertCurrentApp();
   } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); }
   $("send").disabled = false; $("q").focus();
 }
 $("send").onclick = send;
-$("newcase").onclick = () => { C = {}; M = []; imgs = []; $("chips").replaceChildren(); $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false; $("panel").replaceChildren(); };
+$("newcase").onclick = () => {
+  upsertCurrentApp();
+  C = {}; M = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
+  $("chips").replaceChildren(); $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false; $("panel").replaceChildren();
+  renderApps();
+};
 $("q").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
 </script>
 </body>
