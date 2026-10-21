@@ -20,7 +20,8 @@ h1{font:600 18px system-ui;margin:16px auto 0;width:100%;max-width:720px}
 #composer{width:100%;max-width:720px;margin:0 auto 16px;border:1px solid var(--line);border-radius:18px;background:var(--card);padding:8px}
 #chips{display:flex;gap:6px;flex-wrap:wrap}#chips span{font-size:13px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:2px 8px}
 #row{display:flex;gap:8px;align-items:flex-end}
-textarea{flex:1;border:0;background:none;color:var(--fg);font:inherit;resize:none;outline:none;max-height:140px}
+textarea{flex:1;border:0;background:none;color:var(--fg);font:inherit;resize:none;outline:none;max-height:140px;overflow-y:auto;line-height:1.4;padding:6px 0;scrollbar-width:thin}
+textarea::-webkit-scrollbar{width:6px}textarea::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px}
 button{border:0;border-radius:10px;padding:8px 12px;font:inherit;cursor:pointer;background:var(--acc);color:#fff}
 button.ghost{background:none;color:var(--mut);font-size:20px;padding:4px 8px}button:disabled{opacity:.5}
 aside{border-left:1px solid var(--line);padding:16px;overflow:auto;background:var(--card)}
@@ -186,7 +187,7 @@ async function send() {
   if (!text && !imgs.length) return;
   const shown = text || "(documents attached)";
   M.push({ role: "user", content: shown }); add("user", shown + (imgs.length ? `\n[${imgs.length} file(s)]` : ""));
-  const sent = imgs; imgs = []; $("chips").replaceChildren(); $("q").value = ""; $("send").disabled = true;
+  const sent = imgs; imgs = []; $("chips").replaceChildren(); $("q").value = ""; autosize(); $("send").disabled = true;
   const wait = add("bot", "Thinking...");
   try {
     const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ case: C, messages: M, images: sent }) });
@@ -206,6 +207,9 @@ $("newcase").onclick = () => {
   renderApps();
 };
 $("q").addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
+const autosize = () => { $("q").style.height = "auto"; $("q").style.height = $("q").scrollHeight + "px"; };
+$("q").addEventListener("input", autosize);
+autosize();
 </script>
 </body>
 </html>
