@@ -1,0 +1,9 @@
+{
+  "max_pd": 0.15,
+  "max_pti": 0.2,
+  "max_dti_after": 0.43,
+  "max_ltv": 0.8,
+  "min_income": 24000,
+  "min_fico": 600,
+  "default_rate_pct": 12.0
+}
