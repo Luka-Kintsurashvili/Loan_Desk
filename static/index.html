@@ -37,6 +37,7 @@ table.batch{width:100%;border-collapse:collapse;margin-top:8px;font-size:14px}
 table.batch th,table.batch td{text-align:left;padding:5px 10px 5px 0;border-bottom:1px solid var(--line)}
 table.batch th{color:var(--mut);font-weight:600;font-size:13px}
 .v-meets_policy{color:var(--ok)}.v-refer{color:var(--bad)}.v-conditions{color:var(--mid)}.v-need_info{color:var(--mut)}
+.small-btn{font-size:12px;padding:3px 8px;white-space:nowrap}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -89,13 +90,23 @@ async function addFiles(files) {
 $("attach").onclick = () => $("file").click();
 $("file").onchange = e => addFiles([...e.target.files]);
 
+async function discussRow(name, caseData) {
+  if (M.length) upsertCurrentApp();
+  C = { ...caseData }; M = []; MT = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
+  $("chips").replaceChildren(); $("panel").replaceChildren(); $("log").replaceChildren();
+  renderApps();
+  $("q").value = `Please review ${name}'s case and explain the policy result.`;
+  autosize();
+  await send();
+}
+
 function renderBatchTable(container, results) {
   container.replaceChildren();
   container.append(el("p", `Scored ${results.length} applicant(s) from the CSV - no chat, no LLM call, pure policy engine:`));
   const t = document.createElement("table"); t.className = "batch";
   const names = { need_info: "needs info", meets_policy: "meets policy", conditions: "conditions", refer: "refer" };
   const head = document.createElement("tr");
-  ["Applicant", "Verdict", "Default %", "Payment", "Note"].forEach(h => head.append(el("th", h)));
+  ["Applicant", "Verdict", "Default %", "Payment", "Note", ""].forEach(h => head.append(el("th", h)));
   t.append(head);
   results.forEach(r => {
     const row = document.createElement("tr");
@@ -104,6 +115,8 @@ function renderBatchTable(container, results) {
     row.append(el("td", r.default_probability != null ? pct(r.default_probability) : "-"));
     row.append(el("td", r.monthly_payment != null ? usd(r.monthly_payment) : "-"));
     row.append(el("td", r.verdict === "need_info" ? "missing: " + (r.missing || []).join(", ") : (r.top_risk_reason || "")));
+    const dCell = el("td"); const btn = el("button", "Discuss →"); btn.className = "ghost small-btn";
+    btn.onclick = () => discussRow(r.name, r.case); dCell.append(btn); row.append(dCell);
     t.append(row);
   });
   container.append(t);

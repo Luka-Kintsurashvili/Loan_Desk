@@ -21,6 +21,9 @@ def score_csv(text: str) -> list[dict]:
     term_months, credit_score, dti_pct, rate_pct, collateral_value, monthly_income,
     monthly_debt_payments, experience_c, emp_length, purpose, home_ownership_n), plus an
     optional "name" column. Unknown columns are ignored, same as the chat agent does.
+
+    Each result includes the row's merged `case` dict (not just the summary numbers) so
+    the UI can load a specific applicant into the chat agent for a follow-up discussion.
     """
     reader = csv.DictReader(io.StringIO(text))
     results = []
@@ -32,7 +35,7 @@ def score_csv(text: str) -> list[dict]:
         facts = {k: v for k, v in clean.items() if k not in ("name", "applicant") and v}
         case = policy.merge({}, facts)
         d = policy.evaluate(case)
-        result = {"row": i, "name": name, "verdict": d["verdict"]}
+        result = {"row": i, "name": name, "verdict": d["verdict"], "case": case}
         if d["verdict"] == "need_info":
             result["missing"] = d["missing"]
         else:

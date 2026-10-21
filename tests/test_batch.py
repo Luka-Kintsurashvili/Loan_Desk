@@ -17,6 +17,12 @@ def test_scores_each_row_independently():
     assert results[0]["default_probability"] < results[1]["default_probability"]
 
 
+def test_result_includes_the_merged_case_for_followup_discussion():
+    results = batch.score_csv(CSV)
+    assert results[0]["case"]["loan_amount"] == 8000.0
+    assert results[0]["case"]["annual_income"] == 95000.0
+
+
 def test_unknown_columns_are_ignored_not_errors():
     results = batch.score_csv("name,loan_amount,term_months,annual_income,credit_score,extra_junk_column\nX,8000,36,60000,700,whatever\n")
     assert results[0]["verdict"] in ("meets_policy", "conditions", "refer")
