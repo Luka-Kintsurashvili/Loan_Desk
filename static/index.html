@@ -91,9 +91,12 @@ $("attach").onclick = () => $("file").click();
 $("file").onchange = e => addFiles([...e.target.files]);
 
 async function discussRow(name, caseData) {
+  // Deliberately does NOT clear #log: the CSV results table (and anything else already
+  // on screen) lives only in the DOM, not in any saved Application, so wiping it here
+  // would destroy it with no way back. The new conversation just appends below instead.
   if (M.length) upsertCurrentApp();
   C = { ...caseData }; M = []; MT = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
-  $("chips").replaceChildren(); $("panel").replaceChildren(); $("log").replaceChildren();
+  $("chips").replaceChildren();
   renderApps();
   $("q").value = `Please review ${name}'s case and explain the policy result.`;
   autosize();
