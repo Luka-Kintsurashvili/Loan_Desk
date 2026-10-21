@@ -1,9 +1,8 @@
-supabase/.env
-supabase/.temp/
 .env
 .env.*
 !.env.example
 data/
-model/
+model/*
+!model/pd_model.joblib
 __pycache__/
 *.pyc
