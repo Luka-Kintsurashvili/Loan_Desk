@@ -19,10 +19,12 @@ real borrower data anywhere in this repo — use made-up applicants only.
 
 ## Architecture
 
-One Python process (`server.py`, stdlib `http.server`, no web framework) serving a
-single static page (`index.html`, vanilla JS, no build step) and one endpoint,
+`server.py` is a thin entry point; all the real logic lives in the `loan_desk/` package
+(`config`, `model_service`, `loan_math`, `policy`, `rag`, `llm_client`, `tools`, `agent`,
+`http_server`). One Python process (stdlib `http.server`, no web framework) serves one
+static page (`static/index.html`, vanilla JS, no build step) and one endpoint,
 `POST /api/chat`. The client is stateless-server-side: it holds the conversation and the
-case dict and resends both on every turn.
+case dict and resends both on every turn. See `README.md` for the full diagram.
 
 `chat()` runs a **ReAct-style agent loop** (Lecture 6: Thought -> Action -> Observation,
 repeated) against an OpenAI-compatible chat-completions endpoint, capped at
@@ -32,7 +34,7 @@ very first call (native vision, no separate OCR/parsing step) and decides which 
 call. It stops the turn as soon as it returns a message with no tool calls — the same
 termination rule Claude Code's own agent loop uses.
 
-**Tools** (`TOOLS` / `dispatch()` in `server.py`):
+**Tools** (`TOOLS` / `dispatch()` in `loan_desk/tools.py`):
 
 | tool | does | case mutation |
 |---|---|---|
@@ -71,13 +73,21 @@ support, not an automated approval: the UI and prompts say so explicitly.
 
 ## Conventions
 
-- Deterministic math/ML stays in Python functions (`evaluate`, `pmt`, `cm.score`) that
-  the agent calls as tools — never ask the LLM to compute a number.
-- `update_case` facts are filtered against `ALLOWED` (built from the model's feature
-  list plus a few extra UI-facing keys like `monthly_income`); unknown keys are reported
-  back in the tool result rather than silently merged, so the model can self-correct.
-- Tests mock the LLM and the model bundle — `pytest` must never make a network call or
-  need `.env`.
+- Deterministic math/ML stays in Python functions (`policy.evaluate`, `loan_math.pmt`,
+  `model_service.score`) that the agent calls as tools — never ask the LLM to compute a
+  number.
+- `update_case` facts are filtered against `model_service.ALLOWED` (built from the
+  model's feature list plus a few extra UI-facing keys like `monthly_income`); unknown
+  keys are reported back in the tool result rather than silently merged, so the model
+  can self-correct.
+- `loan_desk/config.py` must import cleanly with no `.env` present (it's read as
+  optional, `KEY` can be `None`) — only `llm_client.call_llm()` and the `server.py`
+  entry point actually require a key, and only at call/start time, not at import time.
+  This is what keeps `pytest` able to run with no `.env` and no network call at all.
+- Tests don't mock the trained model — it's small (368 KB), deterministic, and already
+  committed to git, so tests call the real `loan_desk.policy`/`loan_desk.rag` functions
+  directly. Only the LLM is out of scope for tests, and it's simply never called (no
+  test exercises `agent.chat()` or `llm_client.call_llm()`).
 - Don't touch `credit_model.py`'s training logic or the saved model's dict format
   (`model, iso, num, cat, features, baseline, cat_values, importance, metrics`); other
   code depends on that shape.
