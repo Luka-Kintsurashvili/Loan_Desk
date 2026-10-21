@@ -20,12 +20,13 @@ real borrower data anywhere in this repo — use made-up applicants only.
 ## Architecture
 
 `server.py` is a thin entry point; all the real logic lives in the `loan_desk/` package
-(`config`, `model_service`, `loan_math`, `policy`, `rag`, `llm_client`, `tools`, `agent`,
-`batch`, `http_server`). One Python process (stdlib `http.server`, no web framework)
-serves one static page (`static/index.html`, vanilla JS, no build step) and two
-endpoints: `POST /api/chat` (the agent) and `POST /api/batch` (deterministic CSV
-scoring, no LLM - `loan_desk/batch.py` runs `policy.merge()`/`policy.evaluate()` per
-row). The chat client is stateless-server-side: it holds the conversation and the case
+(`config`, `model_service`, `company_model_service`, `loan_math`, `policy`,
+`business_policy`, `company_lookup`, `rag`, `llm_client`, `tools`, `agent`, `batch`,
+`http_server`). One Python process (stdlib `http.server`, no web framework) serves one
+static page (`static/index.html`, vanilla JS, no build step) and two endpoints:
+`POST /api/chat` (the agent) and `POST /api/batch` (deterministic CSV scoring, no LLM -
+`loan_desk/batch.py` runs `policy.merge()`/`policy.evaluate()` per row, personal-loan
+only). The chat client is stateless-server-side: it holds the conversation and the case
 dict and resends both on every turn. See `README.md` for the full diagram.
 
 `chat()` runs a **ReAct-style agent loop** (Lecture 6: Thought -> Action -> Observation,
@@ -90,6 +91,43 @@ swapped in and out of the single active `case`. The agent is instructed to tell 
 to click "New case" (which saves the current one before clearing) rather than try to
 keep two customers' facts straight in one `case` dict itself.
 
+**Second domain: business lending.** The same agent/chat also handles companies,
+mirroring every principle above for a different schema (`business_policy.py`,
+`company_model_service.py`, `company_lookup.py`) rather than extending the personal-loan
+code to cover both:
+- `case["_segment"] = "business"` is set the moment `update_business_case` or
+  `fetch_company_financials` first touches a case; `agent._evaluate(case)` branches on
+  it to call `business_policy.evaluate` instead of `policy.evaluate`, and the response's
+  `decision_kind` field tells the client which panel (`panel` vs `panelBusiness` in
+  `static/index.html`) to render. Getting this tag wrong would silently run the wrong
+  evaluate function on the wrong schema, so it's set in exactly two places
+  (`tools.dispatch`'s `fetch_company_financials`/`update_business_case` branches).
+- `company_lookup.py` calls the SEC's official `data.sec.gov` EDGAR API (not scraping) -
+  every request MUST send the documented descriptive `User-Agent` header (SEC's fair-use
+  policy; see `company_lookup.UA`) or requests get blocked. Revenue/cash-flow are
+  "duration" XBRL facts (a start/end period); total debt (`Liabilities`) is an "instant"
+  fact (as-of date only, no start) - conflating the two silently drops every instant-fact
+  value (a real bug caught during development). Filers also change which XBRL tag they
+  report under over time (e.g. most dropped "Revenues" around the 2018 ASC 606 change),
+  so `_latest_annual` pools ALL candidate tags and picks the single most recent entry
+  across them, not the first tag's own latest (a second real bug: using only the first
+  non-empty tag returned a stale 2018 figure for a company still actively filing).
+- `train_company_model.py`'s `DEBT_SERVICE_RATE` (0.20) must match
+  `business_policy.DEBT_SERVICE_RATE` exactly - the model is trained on `dscr` computed
+  with that assumption, so inference has to reproduce it or the model's learned
+  relationship between dscr and risk is systematically wrong.
+- The company model's trained revenue ceiling is ~$3B; `business_policy.evaluate` flags
+  `out_of_range` above `business_policy.json`'s `out_of_range_revenue` the same way
+  `policy.evaluate` flags a personal loan above $40,000 - but the *deterministic* checks
+  (debt coverage, leverage) keep running normally even when the ML score is flagged, so
+  real financial distress in an out-of-range company still gets caught (verified with
+  AMC Entertainment's real financials: PD estimate is unreliable at that scale, but the
+  debt-service-coverage check still fails correctly on its own).
+- `rag.py`'s `PolicySearch` combines both `policy_docs/lender_policy.md` and
+  `policy_docs/business_policy.md` into one TF-IDF index (one `search_policy_docs` tool,
+  not two) - each chunk keeps its own source document for an accurate citation
+  regardless of which document the best match came from.
+
 ## Conventions
 
 - Deterministic math/ML stays in Python functions (`policy.evaluate`, `loan_math.pmt`,
@@ -103,10 +141,13 @@ keep two customers' facts straight in one `case` dict itself.
   optional, `KEY` can be `None`) — only `llm_client.call_llm()` and the `server.py`
   entry point actually require a key, and only at call/start time, not at import time.
   This is what keeps `pytest` able to run with no `.env` and no network call at all.
-- Tests don't mock the trained model — it's small (368 KB), deterministic, and already
-  committed to git, so tests call the real `loan_desk.policy`/`loan_desk.rag` functions
-  directly. Only the LLM is out of scope for tests, and it's simply never called (no
-  test exercises `agent.chat()` or `llm_client.call_llm()`).
+- Tests don't mock either trained model — both are small, deterministic, and already
+  committed to git, so tests call the real `loan_desk.policy`/`loan_desk.business_policy`/
+  `loan_desk.rag` functions directly. The LLM and SEC EDGAR's network calls are the only
+  things out of scope for tests: the LLM is simply never called (no test exercises
+  `agent.chat()` or `llm_client.call_llm()`), and `company_lookup`'s SEC calls are mocked
+  (`unittest.mock.patch` on `urllib.request.urlopen`) rather than skipped, so the
+  parsing/extraction logic itself is still covered.
 - Don't touch `credit_model.py`'s training logic or the saved model's dict format
   (`model, iso, num, cat, features, baseline, cat_values, importance, metrics`); other
   code depends on that shape.

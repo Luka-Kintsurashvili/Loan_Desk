@@ -27,7 +27,7 @@ DEBT_SERVICE_RATE = 0.20  # assumed ~5-year average amortization, for a syntheti
 
 def generate(n=N, seed=0):
     rng = np.random.RandomState(seed)
-    revenue = np.exp(rng.normal(np.log(5_000_000), 1.3, n)).clip(150_000, 800_000_000)
+    revenue = np.exp(rng.normal(np.log(5_000_000), 1.5, n)).clip(150_000, 3_000_000_000)
     years = rng.gamma(2.0, 4.0, n).clip(0, 60)
     industry = rng.choice(INDUSTRIES, n)
     # debt and cash flow both scale with revenue but with independent noise, so leverage

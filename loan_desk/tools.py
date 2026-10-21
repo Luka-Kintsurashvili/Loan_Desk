@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import json
 
-from . import loan_math, policy, rag
+from . import business_policy as bp
+from . import company_lookup, loan_math, policy, rag
 from . import model_service as ms
 
 TOOLS = [
@@ -41,6 +42,33 @@ TOOLS = [
         "parameters": {"type": "object", "properties": {
             "amount": {"type": "number"}, "rate_pct": {"type": "number"}, "months": {"type": "number"}},
             "required": ["amount", "rate_pct", "months"]}}},
+    {"type": "function", "function": {
+        "name": "fetch_company_financials",
+        "description": "Look up a public (SEC-registered) company's real revenue, total debt, and operating cash flow from its "
+                        "official SEC filings, and record them on the case. Only works for publicly traded companies - returns "
+                        "found: false for a private company (ask the officer for figures instead via update_business_case).",
+        "parameters": {"type": "object", "properties": {"company": {"type": "string"}}, "required": ["company"]}}},
+    {"type": "function", "function": {
+        "name": "update_business_case",
+        "description": "Add or correct company facts stated by the user (for a private company, or to override a fetched figure).",
+        "parameters": {"type": "object", "properties": {
+            "facts": {"type": "object", "description": "key: value pairs using only the allowed business keys listed in the system prompt",
+                       "additionalProperties": True}},
+            "required": ["facts"]}}},
+    {"type": "function", "function": {
+        "name": "score_company_risk",
+        "description": "Get the business-risk model's probability of default for the current company case, and the top reasons.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "check_business_policy",
+        "description": "Check the current company case against the lender's business-lending policy (debt service coverage, "
+                        "leverage, revenue, company age) and get the verdict.",
+        "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "find_business_conditions",
+        "description": "Find alternative loan amount/term combinations for the current company case that would fit the lender's "
+                        "business policy.",
+        "parameters": {"type": "object", "properties": {}}}},
 ]
 TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
 
@@ -89,4 +117,41 @@ def dispatch(name: str, args: dict, case: dict) -> tuple[dict, dict]:
         return case, rag.search_policy_docs(args.get("query", ""))
     if name == "calculate_payment":
         return case, loan_math.calculate_payment(args.get("amount"), args.get("rate_pct"), args.get("months"))
+    if name == "fetch_company_financials":
+        result = company_lookup.fetch_public_financials(str(args.get("company", "")))
+        if not result.get("found"):
+            return case, result
+        facts = {k: result[k] for k in ("revenue", "total_debt", "operating_cash_flow")}
+        facts["company"] = result["company"]
+        return bp.merge(case, facts), result
+    if name == "update_business_case":
+        facts = args.get("facts")
+        if not isinstance(facts, dict):
+            return case, {"error": "facts must be an object of key: value"}
+        accepted = {k: v for k, v in facts.items() if k in bp.ALLOWED and v not in (None, "")}
+        rejected = [k for k in facts if k not in bp.ALLOWED]
+        result = {"updated": accepted}
+        if rejected:
+            result["rejected_unknown_keys"] = rejected
+        return bp.merge(case, accepted), result
+    if name == "score_company_risk":
+        d = bp.evaluate(case)
+        if d["verdict"] == "need_info":
+            return case, {"error": "missing required inputs", "missing": d["missing"]}
+        return case, {"default_probability": d["request"]["pd"], "out_of_range": d.get("out_of_range", False),
+                       "rate_assumed": d.get("rate_assumed", False),
+                       "risk_reasons_up": d["reasons"]["up"], "risk_reasons_down": d["reasons"]["down"]}
+    if name == "check_business_policy":
+        d = bp.evaluate(case)
+        if d["verdict"] == "need_info":
+            return case, {"verdict": "need_info", "missing_required": d["ask"], "optional_missing": d["ask_more"]}
+        return case, {"verdict": d["verdict"], "checks": d["request"]["checks"], "out_of_range": d.get("out_of_range", False)}
+    if name == "find_business_conditions":
+        d = bp.evaluate(case)
+        if d["verdict"] == "need_info":
+            return case, {"error": "missing required inputs", "missing": d["missing"]}
+        if not d["options"]:
+            note = "the requested amount and term already meet policy" if d["verdict"] == "meets_policy" else "no passing amount/term combination was found"
+            return case, {"options": [], "note": note}
+        return case, {"options": d["options"]}
     return case, {"error": f"unknown tool {name}"}  # unreachable given the TOOL_NAMES check above

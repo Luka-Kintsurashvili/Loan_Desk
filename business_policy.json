@@ -1,0 +1,10 @@
+{
+  "max_pd": 0.15,
+  "min_dscr": 1.25,
+  "max_leverage": 3.0,
+  "min_revenue": 500000,
+  "min_years_in_business": 2,
+  "out_of_range_revenue": 2000000000,
+  "default_rate_pct": 9.0,
+  "currency": "$"
+}

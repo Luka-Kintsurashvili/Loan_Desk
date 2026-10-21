@@ -14,15 +14,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from loan_desk import policy, rag  # noqa: E402  (import after sys.path setup)
+from loan_desk import business_policy, policy, rag  # noqa: E402  (import after sys.path setup)
 
 CASES_PATH = Path(__file__).resolve().parent / "cases.json"
 
 
 def run_case(case: dict) -> dict:
-    """Evaluate one case and return the row of results to report."""
-    merged = policy.merge({}, case["facts"])
-    decision = policy.evaluate(merged)
+    """Evaluate one case and return the row of results to report. Routes to the
+    business or personal merge/evaluate pair by the case's optional "segment" field -
+    one eval runner for both domains, not a parallel system."""
+    if case.get("segment") == "business":
+        merged = business_policy.merge({}, case["facts"])
+        decision = business_policy.evaluate(merged)
+    else:
+        merged = policy.merge({}, case["facts"])
+        decision = policy.evaluate(merged)
     verdict_ok = decision["verdict"] == case["expected_verdict"]
 
     row = {"id": case["id"], "category": case["category"], "expected": case["expected_verdict"],

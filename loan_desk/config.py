@@ -13,7 +13,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent.parent
 
-MAX_STEPS = 6  # agent loop iteration guard
+MAX_STEPS = 8  # agent loop iteration guard - bumped from 6 for the longer business flow (fetch -> score -> check -> find -> search)
 MAX_IMAGES = 3
 MAX_BODY_BYTES = 8 * 1024 * 1024  # a few JPEG data URLs plus text, generously bounded
 
@@ -36,11 +36,15 @@ MODEL = os.environ.get("MODEL", "gemini-flash-lite-latest")
 DEFAULT_POLICY = {"max_pd": 0.15, "max_pti": 0.20, "max_dti_after": 0.43, "max_ltv": 0.80,
                    "min_income": 24000, "min_fico": 600, "default_rate_pct": 12.0,
                    "currency": "$", "usd_per_unit": 1.0}
+# EDIT ME: example limits only, not regulations. Set your lender's real policy in business_policy.json.
+DEFAULT_BUSINESS_POLICY = {"max_pd": 0.15, "min_dscr": 1.25, "max_leverage": 3.0,
+                            "min_revenue": 500_000, "min_years_in_business": 2,
+                            "out_of_range_revenue": 2_000_000_000, "default_rate_pct": 9.0, "currency": "$"}
 
 
-def load_policy(path: Path) -> dict:
-    """Load lender policy limits from policy.json, creating it with defaults on first run."""
-    policy = dict(DEFAULT_POLICY)
+def load_policy(path: Path, default: dict) -> dict:
+    """Load policy limits from a JSON file, creating it with defaults on first run."""
+    policy = dict(default)
     if path.exists():
         policy.update(json.loads(path.read_text()))
     else:
@@ -48,5 +52,7 @@ def load_policy(path: Path) -> dict:
     return policy
 
 
-POLICY = load_policy(HERE / "policy.json")
+POLICY = load_policy(HERE / "policy.json", DEFAULT_POLICY)
+BUSINESS_POLICY = load_policy(HERE / "business_policy.json", DEFAULT_BUSINESS_POLICY)
 POLICY_DOC_PATH = HERE / "policy_docs" / "lender_policy.md"
+BUSINESS_POLICY_DOC_PATH = HERE / "policy_docs" / "business_policy.md"

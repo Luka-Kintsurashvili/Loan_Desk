@@ -33,9 +33,12 @@ To retrain the model yourself: `python credit_model.py data\LC_loans_granting_mo
 To run the checks that don't need a live LLM:
 
 ```powershell
-pytest                 # 33 unit tests, mocked/offline, ~2s
-python eval\run_eval.py   # 10 synthetic applicants scored against expected verdicts
+pytest                 # 62 unit tests, mocked/offline (including SEC EDGAR calls), ~20s
+python eval\run_eval.py   # 13 synthetic cases (personal + business) scored against expected verdicts
 ```
+
+To train the company (business) model yourself: `python train_company_model.py`
+(synthetic data, generated in memory - no file needed; already committed, no training required to run the app).
 
 ## Architecture
 
@@ -97,6 +100,30 @@ zero API cost. Useful for bulk pre-screening, and for demonstrating that the pol
 engine is a real, independent system, not something the chat agent fakes. Try it with
 `eval/sample_applicants.csv` (5 applicants spanning meets_policy/conditions/refer/
 need_info).
+
+### Company (business) lending
+
+The same chat agent also handles commercial loans — name a company and it does the
+rest: `fetch_company_financials` pulls real revenue, total debt, and operating cash
+flow from the company's actual SEC filings (the official `data.sec.gov` EDGAR API, not
+scraping), `score_company_risk` runs a second model trained on synthetic company data,
+and `check_business_policy` checks debt-service coverage and leverage against
+`business_policy.json`. One agent, one chat — it tells a personal applicant from a
+company by context, the same way it already tells a document from a question. This
+only works for **publicly traded** companies; a private company's figures have to be
+given directly (`update_business_case`), same anti-invention rule as everywhere else.
+
+| tool | does |
+|---|---|
+| `fetch_company_financials(company)` | looks up real SEC filings, auto-records what it finds |
+| `update_business_case(facts)` | manual entry/correction (private companies, overrides) |
+| `score_company_risk()` | runs the synthetic-trained company model |
+| `check_business_policy()` | debt coverage, leverage, revenue, company-age checks |
+| `find_business_conditions()` | alternate amount/term combinations that would pass |
+
+`search_policy_docs` and `calculate_payment` are reused unchanged — one combined TF-IDF
+index now covers both `policy_docs/lender_policy.md` and `policy_docs/business_policy.md`,
+each chunk keeping its real source for citation.
 
 ## Architecture principles
 
@@ -162,6 +189,18 @@ coordinate. See `CLAUDE.md` for more on this and other design decisions.
 - **No persistence.** The client holds the case and conversation; closing the tab loses
   it. There is no database, no auth, and no multi-user session handling — it's a
   single-officer local prototype.
+- **The company risk model is trained entirely on synthetic data** — there is no public
+  dataset of real company defaults at this project's scale, so `train_company_model.py`
+  generates a synthetic one (fixed seed, in memory). It is not fit to any real outcome.
+- **Company lookup only covers publicly traded (SEC-registered) companies.** Most real
+  small-business loan applicants are private and won't be found; a private company's
+  figures must be supplied by the officer.
+- **The company model's trained revenue range tops out around $3B** — a company larger
+  than that (flagged `out_of_range`, e.g. most mega-cap public companies) gets an
+  unreliable risk score. The deterministic policy checks (debt coverage, leverage) still
+  run normally and can still catch real distress even when the score is flagged.
+- **"Total debt" for a public company is its total liabilities** from SEC filings, a
+  conservative proxy — not every filer breaks out debt-only figures the same way.
 
 ## 5-minute demo script
 

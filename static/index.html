@@ -38,6 +38,7 @@ table.batch th,table.batch td{text-align:left;padding:5px 10px 5px 0;border-bott
 table.batch th{color:var(--mut);font-weight:600;font-size:13px}
 .v-meets_policy{color:var(--ok)}.v-refer{color:var(--bad)}.v-conditions{color:var(--mid)}.v-need_info{color:var(--mut)}
 .small-btn{font-size:12px;padding:3px 8px;white-space:nowrap}
+.warn{display:block;color:var(--mid);margin-top:4px}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -63,7 +64,7 @@ table.batch th{color:var(--mut);font-weight:600;font-size:13px}
 <script>
 const $ = id => document.getElementById(id);
 let C = {}, M = [], MT = [], imgs = [];
-let APPS = [], CUR_APP_ID = null, LAST_DECISION = null, LAST_READ = null;
+let APPS = [], CUR_APP_ID = null, LAST_DECISION = null, LAST_READ = null, LAST_KIND = "personal";
 const el = (t, x, c) => { const e = document.createElement(t); if (x != null) e.textContent = x; if (c) e.className = c; return e; };
 const pct = x => (x * 100).toFixed(1) + "%";
 let CUR = "$";
@@ -94,7 +95,7 @@ let LAST_BATCH = null;
 
 function clearToBlankCase() {
   if (M.length) upsertCurrentApp();
-  C = {}; M = []; MT = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null;
+  C = {}; M = []; MT = []; imgs = []; CUR_APP_ID = null; LAST_DECISION = null; LAST_READ = null; LAST_KIND = "personal";
   $("chips").replaceChildren(); $("panel").replaceChildren();
   $("log").replaceChildren(); $("log").hidden = true; $("drop").hidden = false;
 }
@@ -181,9 +182,10 @@ function renderLog() {
   });
 }
 
-function appLabel(c, d) {
+function appLabel(c, d, kind) {
   const parts = [];
-  if (c && c.loan_amount) parts.push(usd(c.loan_amount));
+  if (kind === "business" && c && c.company) parts.push(c.company);
+  else if (c && c.loan_amount) parts.push(usd(c.loan_amount));
   if (d && d.verdict) parts.push({ need_info: "needs info", meets_policy: "meets policy", conditions: "conditions", refer: "refer" }[d.verdict] || d.verdict);
   return parts.join(" · ") || "Application";
 }
@@ -201,7 +203,8 @@ function renderApps() {
 function upsertCurrentApp() {
   if (!M.length) return;
   if (CUR_APP_ID == null) CUR_APP_ID = Date.now() + Math.random();
-  const rec = { id: CUR_APP_ID, label: appLabel(C, LAST_DECISION), case: C, messages: M, trace: MT, decision: LAST_DECISION, read: LAST_READ };
+  const rec = { id: CUR_APP_ID, label: appLabel(C, LAST_DECISION, LAST_KIND), case: C, messages: M, trace: MT,
+                decision: LAST_DECISION, read: LAST_READ, kind: LAST_KIND };
   const i = APPS.findIndex(a => a.id === CUR_APP_ID);
   if (i >= 0) APPS[i] = rec; else APPS.push(rec);
   renderApps();
@@ -211,10 +214,11 @@ function switchToApp(id) {
   if (id === CUR_APP_ID) return;
   const app = APPS.find(a => a.id === id);
   if (!app) return;
-  C = app.case; M = app.messages; MT = app.trace || []; LAST_DECISION = app.decision; LAST_READ = app.read; CUR_APP_ID = id;
+  C = app.case; M = app.messages; MT = app.trace || []; LAST_DECISION = app.decision; LAST_READ = app.read;
+  LAST_KIND = app.kind || "personal"; CUR_APP_ID = id;
   imgs = []; $("chips").replaceChildren();
   renderLog();
-  panel(app.decision || {}, app.read || {});
+  (LAST_KIND === "business" ? panelBusiness : panel)(app.decision || {}, app.read || {});
   renderApps();
 }
 
@@ -257,6 +261,34 @@ function panel(d, read) {
   p.append(el("p", `Prototype model (${d.model.model}), test AUC ${d.model.auc}, Gini ${d.model.gini}, KS ${d.model.ks}. Trained on Lending Club 2007-2018. Average default rate in the training data: ${pct(d.model.train_default_rate)}. Recalibrate on your own loans before real use.`, "small"));
 }
 
+function businessCheckText(c) {
+  if (c.name === "Default probability") return `${pct(c.value)} / ${pct(c.limit)}`;
+  if (c.name === "Annual revenue") return `${usd(c.value)} / ${usd(c.limit)}`;
+  if (c.name === "Years in business") return `${c.value.toFixed(1)} / ${c.limit}`;
+  return `${c.value.toFixed(2)}x / ${c.limit.toFixed(2)}x`;  // Debt service coverage, Leverage - plain ratios
+}
+
+function panelBusiness(d, read) {
+  const p = $("panel"); p.replaceChildren(); CUR = d.currency || "$";
+  const names = { need_info: ["Need more info", "var(--mut)"], meets_policy: ["Meets policy", "var(--ok)"], conditions: ["Needs conditions", "var(--mid)"], refer: ["Refer / decline", "var(--bad)"] }[d.verdict];
+  const b = el("span", names[0], "badge"); b.style.background = names[1]; p.append(el("h2", "Verdict"), b);
+  if (d.out_of_range) p.append(el("div", "Revenue is above this prototype's trained range - treat the default-probability estimate with caution.", "small warn"));
+  if (read && Object.keys(read).length) { p.append(el("h2", "Just read from your message or files")); const u = el("ul"); Object.entries(read).forEach(([k, v]) => u.append(el("li", `${k.replace(/_/g, " ")}: ${v}`))); p.append(u); }
+  const lst = (t, a) => { if (a && a.length) { p.append(el("h2", t)); const u = el("ul"); a.forEach(x => u.append(el("li", x))); p.append(u); } };
+  lst("Needed for the policy checks", d.ask); lst("More details sharpen the estimate", d.ask_more);
+  if (!d.request) return;
+  p.append(el("h2", "Chance of default"), el("div", pct(d.request.pd), "big"),
+    el("div", `Payment ${usd(d.request.payment)}/mo${d.rate_assumed ? " (rate assumed)" : ""}`, "small"));
+  p.append(el("h2", "Policy checks"));
+  d.request.checks.forEach(c => { const r = el("div", null, "ck");
+    r.append(el("span", c.name), el("span", businessCheckText(c), c.ok ? "ok" : "no")); p.append(r); });
+  const up = d.reasons.up || [], dn = d.reasons.down || [];
+  if (up.length) { p.append(el("h2", "What raises the risk")); const u = el("ul"); up.forEach(r => u.append(el("li", `${r.feature} = ${typeof r.value === "number" ? +r.value.toFixed(2) : r.value} (typical ${typeof r.typical === "number" ? +r.typical.toFixed(2) : r.typical}), +${r.effect_pts} pts`))); p.append(u); }
+  if (dn.length) { p.append(el("h2", "What lowers it")); const u = el("ul"); dn.forEach(r => u.append(el("li", `${r.feature} = ${typeof r.value === "number" ? +r.value.toFixed(2) : r.value}, ${r.effect_pts} pts`))); p.append(u); }
+  if (d.verdict !== "meets_policy" && d.options.length) { p.append(el("h2", "Conditions that fit policy")); const u = el("ul"); d.options.forEach(o => u.append(el("li", `${usd(o.amount)} over ${o.term} months, ${usd(o.payment)}/mo, default chance ${pct(o.pd)}`))); p.append(u); }
+  p.append(el("p", `Prototype model (${d.model.model}), test AUC ${d.model.auc}, Gini ${d.model.gini}, KS ${d.model.ks}. Trained on SYNTHETIC company data, not real default outcomes. Recalibrate before real use.`, "small"));
+}
+
 async function send() {
   const text = $("q").value.trim();
   if (!text && !imgs.length) return;
@@ -269,8 +301,9 @@ async function send() {
     const j = await r.json(); if (!r.ok) throw new Error(j.error);
     C = j.case; M.push({ role: "assistant", content: j.reply }); MT.push(j.trace); md(wait, j.reply);
     if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small"));
-    renderTrace(wait, j.trace); panel(j.decision, j.read);
-    LAST_DECISION = j.decision; LAST_READ = j.read; upsertCurrentApp();
+    renderTrace(wait, j.trace);
+    (j.decision_kind === "business" ? panelBusiness : panel)(j.decision, j.read);
+    LAST_DECISION = j.decision; LAST_READ = j.read; LAST_KIND = j.decision_kind || "personal"; upsertCurrentApp();
   } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); MT.pop(); }
   $("send").disabled = false; $("q").focus();
 }

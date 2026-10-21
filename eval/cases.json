@@ -71,5 +71,33 @@
     "expected_verdict": "refer",
     "policy_query": "what documents confirm income from a bank statement",
     "expected_policy_section": "Income verification"
+  },
+  {
+    "id": "strong_business",
+    "category": "good",
+    "segment": "business",
+    "description": "Low leverage, strong debt service coverage, decades in business - a real public company's actual financials (National Beverage Corp), well within the model's trained revenue range.",
+    "facts": {"loan_amount": 2000000, "term_months": 36, "revenue": 1180552000, "total_debt": 215933000, "operating_cash_flow": 181254000, "years_in_business": 30, "industry": "manufacturing"},
+    "expected_verdict": "meets_policy",
+    "expected_out_of_range": false,
+    "policy_query": "how much debt service coverage does the lender require",
+    "expected_policy_section": "Debt service coverage"
+  },
+  {
+    "id": "distressed_business_out_of_range",
+    "category": "risky",
+    "segment": "business",
+    "description": "A real public company's actual financials (AMC Entertainment): negative operating cash flow and revenue far above the synthetic model's trained range - the deterministic debt-service-coverage check must still catch the real distress even though the ML risk score is flagged unreliable at this scale.",
+    "facts": {"loan_amount": 5000000, "term_months": 60, "revenue": 4848900000, "total_debt": 9912600000, "operating_cash_flow": -119800000, "years_in_business": 25, "industry": "hospitality"},
+    "expected_verdict": "refer",
+    "expected_out_of_range": true
+  },
+  {
+    "id": "missing_business_data",
+    "category": "missing_data",
+    "segment": "business",
+    "description": "Loan amount and revenue given, but no debt or cash flow figures - the agent must ask (or fetch via SEC EDGAR), never guess a company's financials.",
+    "facts": {"loan_amount": 1000000, "revenue": 3000000},
+    "expected_verdict": "need_info"
   }
 ]
