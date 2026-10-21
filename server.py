@@ -7,6 +7,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
 import credit_model as cm
 
@@ -34,28 +36,31 @@ if pf.exists():
 else:
     pf.write_text(json.dumps(POLICY, indent=2))
 
-# Minimal placeholder policy reference so search_policy_docs works end to end; step 3 replaces this
-# with a real policy_docs/ page chunked by heading and searched with TF-IDF.
-POLICY_SECTIONS = [
-    ("Income verification", "Income must be confirmed with a pay stub, bank statement or tax return before a loan is "
-     "funded. Self-employed applicants provide two years of tax returns instead of a pay stub."),
-    ("Affordability", f"Payment-to-income must stay at or under {POLICY['max_pti'] * 100:.0f}% of monthly income, and "
-     f"total debt-to-income after the new loan at or under {POLICY['max_dti_after'] * 100:.0f}%."),
-    ("Credit score", f"A FICO score below {POLICY['min_fico']} is not an automatic decline; it requires collateral or "
-     "a co-signer before the loan can proceed."),
-    ("Collateral and secured loans", f"Secured loans are capped at {POLICY['max_ltv'] * 100:.0f}% loan-to-value "
-     "against the appraised collateral value."),
-    ("Exceptions", "A case that fails exactly one check by a small margin (within 10% of the limit) can be referred "
-     "to a senior officer with a written reason instead of an automatic decline."),
-]
+# RAG over a small fictional policy page: parse -> chunk by heading -> TF-IDF vectorize -> cosine search.
+# A one-page doc this size doesn't need a vector database or dense embeddings; TF-IDF + linear scan is
+# the right-sized choice, not a shortcut (see Lecture 3's vector-DB sizing discussion).
+POLICY_DOC_PATH = HERE / "policy_docs" / "lender_policy.md"
+
+
+def _load_policy_chunks(path):
+    text = path.read_text(encoding="utf-8").format(
+        max_pti_pct=POLICY["max_pti"] * 100, max_dti_pct=POLICY["max_dti_after"] * 100,
+        min_fico=POLICY["min_fico"], max_ltv_pct=POLICY["max_ltv"] * 100)
+    parts = re.split(r"(?m)^## (.+)$", text)  # parts[0] is the title/intro before the first heading
+    return [(parts[i].strip(), parts[i + 1].strip()) for i in range(1, len(parts), 2)]
+
+
+POLICY_CHUNKS = _load_policy_chunks(POLICY_DOC_PATH)
+_tfidf = TfidfVectorizer(stop_words="english")
+_chunk_vectors = _tfidf.fit_transform([heading + " " + body for heading, body in POLICY_CHUNKS])
 
 
 def search_policy_docs(query):
-    words = lambda s: set(re.findall(r"[a-z]+", s.lower()))
-    q = words(str(query))
-    scored = sorted(((len(q & words(sec + " " + txt)), sec, txt) for sec, txt in POLICY_SECTIONS), key=lambda x: -x[0])
-    top = [s for s in scored if s[0] > 0][:3] or scored[:1]
-    return {"results": [{"section": sec, "text": txt, "source": "Lender Policy Summary"} for _, sec, txt in top]}
+    sims = cosine_similarity(_tfidf.transform([str(query)]), _chunk_vectors)[0]
+    order = sims.argsort()[::-1]
+    top = [i for i in order[:3] if sims[i] > 0] or [int(order[0])]
+    return {"results": [{"section": POLICY_CHUNKS[i][0], "text": POLICY_CHUNKS[i][1],
+                          "source": "policy_docs/lender_policy.md"} for i in top]}
 
 F = set(B["features"])
 pick = lambda *names: next((n for n in names if n in F), None)
@@ -295,6 +300,9 @@ def summarize(result, limit=200):
 def dispatch(name, args, case):
     """Execute one tool call against the current case. Returns (possibly updated case, result dict)."""
     if name == "update_case":
+        # Each field in `facts` REPLACES the same field already in `case` (no accumulation/append -
+        # a corrected income overwrites the old one, it doesn't average with it). monthly_debt_payments
+        # is the one field that also derives dti_pct as a side effect, inside merge().
         facts = args.get("facts")
         if not isinstance(facts, dict):
             return case, {"error": "facts must be an object of key: value"}
