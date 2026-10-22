@@ -123,3 +123,20 @@ def test_find_business_conditions_notes_when_nothing_passes():
     _, result = tools.dispatch("find_business_conditions", {}, case)
     assert result["options"] == []
     assert "note" in result
+
+
+def test_suggest_new_case_is_honored_when_the_case_already_has_someone_elses_facts():
+    case, _ = tools.dispatch("update_case", {"facts": BASE_FACTS}, {})
+    case, result = tools.dispatch("suggest_new_case", {}, case)
+    assert result == {"suggested": True}
+    assert case["loan_amount"] == 20000  # untouched - the client, not this tool, starts the new one
+
+
+def test_suggest_new_case_is_refused_when_the_case_is_already_empty():
+    """Regression test: the model can pattern-match on phrasing like "a different
+    applicant" even right after starting a fresh, empty case (e.g. the exact text the
+    Start-new-case button resends) - there's nothing to protect then, so the tool must
+    refuse deterministically rather than relying on the model to notice on its own."""
+    case, result = tools.dispatch("suggest_new_case", {}, {})
+    assert "error" in result
+    assert case == {}

@@ -39,6 +39,7 @@ table.batch th{color:var(--mut);font-weight:600;font-size:13px}
 .v-meets_policy{color:var(--ok)}.v-refer{color:var(--bad)}.v-conditions{color:var(--mid)}.v-need_info{color:var(--mut)}
 .small-btn{font-size:12px;padding:3px 8px;white-space:nowrap}
 .warn{display:block;color:var(--mid);margin-top:4px}
+.new-case-suggest{display:block;margin-top:8px}
 @media(max-width:800px){#app{grid-template-columns:1fr;height:auto}main{height:90vh}}
 </style>
 </head>
@@ -117,6 +118,17 @@ async function discussRow(name, caseData, preview) {
   if (preview) panel({ verdict: preview.verdict, currency: "$" }, caseData); // instant, before the AI even replies
   renderApps();
   $("q").value = `Please review ${name}'s case and explain the policy result.`;
+  autosize();
+  await send();
+}
+
+async function startNewCaseFrom(text) {
+  // Used by the inline "Start a new case" button: archives the current conversation
+  // (clearToBlankCase saves it, same as New case) and immediately resends the message
+  // that described the new applicant/company, so the officer doesn't have to retype it.
+  clearToBlankCase();
+  renderApps();
+  $("q").value = text;
   autosize();
   await send();
 }
@@ -302,6 +314,11 @@ async function send() {
     C = j.case; M.push({ role: "assistant", content: j.reply }); MT.push(j.trace); md(wait, j.reply);
     if (j.debug) wait.append(el("p", "Debug: " + j.debug.images + " file(s) sent. Model reply while reading: " + (j.debug.model_reply || "(empty)"), "small"));
     renderTrace(wait, j.trace);
+    if (j.suggest_new_case) {
+      const btn = el("button", "Start a new case with this →"); btn.className = "ghost small-btn new-case-suggest";
+      btn.onclick = () => startNewCaseFrom(shown);
+      wait.append(btn);
+    }
     (j.decision_kind === "business" ? panelBusiness : panel)(j.decision, j.read);
     LAST_DECISION = j.decision; LAST_READ = j.read; LAST_KIND = j.decision_kind || "personal"; upsertCurrentApp();
   } catch (e) { wait.textContent = "Error: " + e.message; M.pop(); MT.pop(); }

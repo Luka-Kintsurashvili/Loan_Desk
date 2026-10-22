@@ -69,6 +69,12 @@ TOOLS = [
         "description": "Find alternative loan amount/term combinations for the current company case that would fit the lender's "
                         "business policy.",
         "parameters": {"type": "object", "properties": {}}}},
+    {"type": "function", "function": {
+        "name": "suggest_new_case",
+        "description": "Call this (instead of mixing facts in) when the user is describing a different, new applicant, "
+                        "customer, or company while the current case already holds someone else's facts - it lets the "
+                        "interface offer a one-click way to start a fresh case for them.",
+        "parameters": {"type": "object", "properties": {}}}},
 ]
 TOOL_NAMES = {t["function"]["name"] for t in TOOLS}
 
@@ -154,4 +160,14 @@ def dispatch(name: str, args: dict, case: dict) -> tuple[dict, dict]:
             note = "the requested amount and term already meet policy" if d["verdict"] == "meets_policy" else "no passing amount/term combination was found"
             return case, {"options": [], "note": note}
         return case, {"options": d["options"]}
+    if name == "suggest_new_case":
+        # Deterministic guard: the model sometimes pattern-matches on phrasing like
+        # "a different applicant" even when the case is already empty (e.g. right after
+        # the button it suggests last time resent that same phrasing as a fresh
+        # message) - that's nothing to protect, so refuse the suggestion in code rather
+        # than relying on the prompt alone to notice the case is empty.
+        if not case:
+            return case, {"error": "the current case is already empty - there is nothing to protect here. Record these "
+                                    "facts normally with update_case or update_business_case instead of suggesting a new case."}
+        return case, {"suggested": True}  # case deliberately untouched - the client, not this tool, starts the new one
     return case, {"error": f"unknown tool {name}"}  # unreachable given the TOOL_NAMES check above
